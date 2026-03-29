@@ -5,18 +5,21 @@ import markdown
 import re
 from urllib.parse import quote
 
-# Настройки путей
-VAULT_PATH = os.path.dirname(os.getcwd())
-OUTPUT_DIR = os.path.join(os.getcwd(), "rss")
+# Сохраняем прямо в ту папку, где лежит скрипт (в корень репозитория)
+OUTPUT_DIR = os.getcwd() 
+# Базовая папка Обсидиана (на уровень выше)
+VAULT_PATH = os.path.dirname(OUTPUT_DIR)
 
-# Словарь для транслитерации (чтобы NotebookLM не пугался русских букв в URL)
+# Транслитерация для имен файлов
 def translit(text):
     cyr = 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя '
     lat = 'abvgdeezzijklmnoprstufhzcss_y_eua_'
     table = str.maketrans(cyr, lat)
-    return text.lower().translate(table).replace(' ', '_')
+    # Убираем всё, кроме букв и цифр, меняем пробелы на подчеркивания
+    res = text.lower().translate(table)
+    return re.sub(r'[^a-z0-9_]', '', res.replace(' ', '_'))
 
-EXCLUDED_DIRS = {'.obsidian', '.trash', 'Шаблоны', 'Chats', '.gemini', 'rss', '.git', 'attachments', 'Obsidian RSS'}
+EXCLUDED_DIRS = {'.obsidian', '.trash', 'Шаблоны', 'Chats', '.gemini', 'rss', '_rss_output', '.git', 'attachments', 'Obsidian RSS'}
 
 def clean_markdown(content):
     content = re.sub(r'\[\[(?:[^\]|]*\|)?([^\]]*)\]\]', r'\1', content)
@@ -24,10 +27,8 @@ def clean_markdown(content):
     return content
 
 def generate_feeds():
-    print(f"--- Генерация RSS для NotebookLM (Final) ---")
-    if not os.path.exists(OUTPUT_DIR):
-        os.makedirs(OUTPUT_DIR)
-
+    print(f"--- Генерация RSS (Корень репозитория) ---")
+    
     items = os.listdir(VAULT_PATH)
     top_folders = [d for d in items if os.path.isdir(os.path.join(VAULT_PATH, d)) and d not in EXCLUDED_DIRS]
 
@@ -58,11 +59,10 @@ def generate_feeds():
         
         rss_items = []
         for n in notes:
-            # Делаем ссылку "валидной" для парсера NotebookLM
-            safe_title = quote(n['title'])
             rss_items.append(PyRSS2Gen.RSSItem(
                 title=n['title'],
-                link=f"https://github.com/local/{safe_title}", 
+                # Ссылка на сам репозиторий, чтобы NotebookLM не ругался на 404
+                link=f"https://local-obsidian-note/{quote(n['title'])}",
                 description=n['content'],
                 guid=PyRSS2Gen.Guid(n['path']),
                 pubDate=n['date']
@@ -70,18 +70,17 @@ def generate_feeds():
 
         rss = PyRSS2Gen.RSS2(
             title=f"Obsidian: {folder}",
-            link=f"https://local-vault/{folder}",
+            link="https://github.com/",
             description=f"Auto-feed",
             lastBuildDate=datetime.datetime.now(),
             items=rss_items
         )
 
-        # Сохраняем файл с английским именем
         english_name = translit(folder)
         out_path = os.path.join(OUTPUT_DIR, f"{english_name}.xml")
         with open(out_path, "w", encoding='utf-8') as f:
             rss.write_xml(f, encoding='utf-8')
-        print(f"    [OK] Создан: {english_name}.xml (для папки {folder})")
+        print(f"    [OK] Создан: {english_name}.xml")
 
 if __name__ == "__main__":
     generate_feeds()
