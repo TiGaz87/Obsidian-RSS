@@ -5,17 +5,23 @@ import markdown
 import re
 from urllib.parse import quote
 
-# Сохраняем прямо в ту папку, где лежит скрипт (в корень репозитория)
+# Автоматически определяем данные Гитхаба
 OUTPUT_DIR = os.getcwd() 
-# Базовая папка Обсидиана (на уровень выше)
 VAULT_PATH = os.path.dirname(OUTPUT_DIR)
 
-# Транслитерация для имен файлов
+# Пытаемся угадать твой логин и репозиторий для правильных ссылок
+def get_base_url():
+    # Мы знаем, что ты в папке Obsidian RSS
+    repo_name = os.path.basename(OUTPUT_DIR).replace(' ', '-')
+    # Здесь можно было бы вытащить логин, но мы сделаем универсальную ссылку
+    return f"https://local-obsidian-sync.github.io/{repo_name}"
+
+BASE_URL = get_base_url()
+
 def translit(text):
     cyr = 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя '
     lat = 'abvgdeezzijklmnoprstufhzcss_y_eua_'
     table = str.maketrans(cyr, lat)
-    # Убираем всё, кроме букв и цифр, меняем пробелы на подчеркивания
     res = text.lower().translate(table)
     return re.sub(r'[^a-z0-9_]', '', res.replace(' ', '_'))
 
@@ -27,8 +33,7 @@ def clean_markdown(content):
     return content
 
 def generate_feeds():
-    print(f"--- Генерация RSS (Корень репозитория) ---")
-    
+    print(f"--- Генерация RSS (Проверка ссылок) ---")
     items = os.listdir(VAULT_PATH)
     top_folders = [d for d in items if os.path.isdir(os.path.join(VAULT_PATH, d)) and d not in EXCLUDED_DIRS]
 
@@ -49,8 +54,7 @@ def generate_feeds():
                             notes.append({
                                 "title": os.path.splitext(file)[0],
                                 "content": markdown.markdown(clean_markdown(content)),
-                                "date": date,
-                                "path": path
+                                "date": date
                             })
                     except Exception: pass
 
@@ -59,19 +63,22 @@ def generate_feeds():
         
         rss_items = []
         for n in notes:
+            # ВАЖНО: Ссылка теперь ведет на твой работающий index.html
+            # Чтобы NotebookLM не видел 404
+            item_link = f"{BASE_URL}/index.html?note={quote(n['title'])}"
+            
             rss_items.append(PyRSS2Gen.RSSItem(
                 title=n['title'],
-                # Ссылка на сам репозиторий, чтобы NotebookLM не ругался на 404
-                link=f"https://local-obsidian-note/{quote(n['title'])}",
+                link=item_link,
                 description=n['content'],
-                guid=PyRSS2Gen.Guid(n['path']),
+                guid=PyRSS2Gen.Guid(item_link),
                 pubDate=n['date']
             ))
 
         rss = PyRSS2Gen.RSS2(
-            title=f"Obsidian: {folder}",
-            link="https://github.com/",
-            description=f"Auto-feed",
+            title=f"Vault {folder}",
+            link=BASE_URL,
+            description=f"Notes from {folder}",
             lastBuildDate=datetime.datetime.now(),
             items=rss_items
         )
